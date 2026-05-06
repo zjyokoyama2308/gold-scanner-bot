@@ -2,19 +2,18 @@ const http = require('http');
 
 const ANTHROPIC_KEY = process.env.ANTHROPIC_API_KEY;
 
-const SYSTEM = `You are a gold trading assistant for a retail trader using this strategy:
-- Assets: XAUUSD (primary), XAGUSD, US500, NAS100
-- Timeframes: Daily (bias) then 1H (confirm levels) then 15m (entry trigger)
-- Entry conditions all 3 must fire on 15m: Bollinger Bands (10) at extreme, RSI (14) at extreme turning, MACD (12,26,9) pink crosses blue
+const SYSTEM = `You are a gold trading assistant for a retail trader. You have access to web search - always search for the latest news before answering questions about market direction or geopolitical developments.
+
+Trading strategy:
+- Assets: XAUUSD primary
+- Entry: Bollinger Bands (10) at extreme + RSI (14) at extreme turning + MACD (12,26,9) pink crosses blue - all 3 required
 - No trade if RSI 42-58 mid range
-- Stop loss just beyond swing high/low around 10-12pts gold ATR adjusted
-- TP1 middle Bollinger Band close half move SL to entry
-- TP2 outer Bollinger Band reassess trail if strong
-- Risk 5% per trade max 2 simultaneous trades
-- Account around 2000 USD leverage 1:100 on Swissquote MT5
-- 75% fundamentals 25% technical approach
-- Never trade against major news. Check Forex Factory every morning.
-Keep answers short, clear and practical. No jargon. Plain English only.`;
+- Stop loss ATR adjusted around 10-12pts
+- TP1 middle Bollinger Band, TP2 outer band
+- Risk 5% per trade, account around 2000 USD on Swissquote MT5
+- 75% fundamentals 25% technical
+
+When asked about market direction or news: ALWAYS search the web first for today's latest gold market news, geopolitical developments, Fed comments, dollar moves. Then give a clear BULLISH, BEARISH or NEUTRAL verdict with reasoning. Be direct and concise. Plain English only.`;
 
 const server = http.createServer(async (req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -39,15 +38,28 @@ const server = http.createServer(async (req, res) => {
           'anthropic-version': '2023-06-01'
         },
         body: JSON.stringify({
-          model: 'claude-haiku-4-5-20251001',
-          max_tokens: 400,
+          model: 'claude-sonnet-4-20250514',
+          max_tokens: 1024,
+          tools: [{"type": "web_search_20250305", "name": "web_search"}],
           system: SYSTEM,
           messages: [{ role: 'user', content: userMsg }]
         })
       });
 
       const data = await response.json();
-      const reply = data.content && data.content[0] ? data.content[0].text : 'Sorry, could not get a response.';
+      
+      // Extract only text blocks from response
+      let reply = '';
+      if (data.content) {
+        reply = data.content
+          .filter(block => block.type === 'text')
+          .map(block => block.text)
+          .join('\n')
+          .trim();
+      }
+      
+      if (!reply) reply = 'Could not get a response. Please try again.';
+      
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ reply }));
     } catch (e) {
